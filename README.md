@@ -320,7 +320,7 @@ Frontend:
 
 
 
-http://localhost:5173
+http://localhost:5176
 
 
 
@@ -379,8 +379,6 @@ Excluded files include:
 
 
 \- Cloud deployment
-
-\- User authentication and authorization
 
 \- Email notifications
 
