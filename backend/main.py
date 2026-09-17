@@ -17,8 +17,7 @@ from docx import Document
 from pypdf import PdfReader
 
 from database import SessionLocal
-from models import Project, PlagiarismReport
-
+from models import Project, PlagiarismReport, User
 
 app = FastAPI(
     title="Cloud-Based Academic Project Management and Plagiarism Checker",
@@ -36,6 +35,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5176",
+        "http://127.0.0.5176",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -68,6 +69,7 @@ class ProjectCreate(BaseModel):
     guide: str = ""
     department: str
     academic_year: str
+    user_id: int
 
 
 # =========================
@@ -80,6 +82,39 @@ def home():
         "message": "Cloud Academic Project Management API is running"
     }
 
+
+# =========================
+# LOGIN
+# =========================
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    role: str
+
+
+@app.post("/login")
+def login(
+    login_data: LoginRequest,
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(
+        User.username == login_data.username,
+        User.role == login_data.role
+    ).first()
+
+    if not user or user.password != login_data.password:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username, password, or role"
+        )
+
+    return {
+        "message": "Login successful",
+        "user_id": user.id,
+        "username": user.username,
+        "role": user.role
+    }
 
 # =========================
 # HEALTH CHECK
@@ -108,7 +143,8 @@ def create_project(
         team_members=project_data.team_members,
         guide=project_data.guide,
         department=project_data.department,
-        academic_year=project_data.academic_year
+        academic_year=project_data.academic_year,
+        user_id=project_data.user_id
     )
 
     db.add(project)
@@ -119,7 +155,6 @@ def create_project(
         "message": "Project created successfully",
         "project_id": project.id
     }
-
 
 # =========================
 # GET ALL PROJECTS
@@ -142,7 +177,8 @@ def get_projects(
             "department": project.department,
             "academic_year": project.academic_year,
             "status": project.status,
-            "submission_status": project.submission_status
+            "submission_status": project.submission_status,
+            "user_id": project.user_id
         }
         for project in projects
     ]

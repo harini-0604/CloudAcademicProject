@@ -1,16 +1,30 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+const API_URL = "http://127.0.0.1:8000";
+
 function App() {
   const [loginType, setLoginType] = useState("");
   const [loggedIn, setLoggedIn] = useState(false);
   const [facultyLoggedIn, setFacultyLoggedIn] = useState(false);
+
+  // Logged-in user information
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUsername, setCurrentUsername] = useState("");
 
   const [projects, setProjects] = useState([]);
   const [studentProjects, setStudentProjects] = useState([]);
   const [showFacultyProjects, setShowFacultyProjects] = useState(false);
   const [showSubmittedOnly, setShowSubmittedOnly] = useState(false);
   const [showProjectForm, setShowProjectForm] = useState(false);
+
+  // =========================
+  // LOGIN STATES
+  // =========================
+
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
 
   // =========================
   // PLAGIARISM STATES
@@ -21,8 +35,11 @@ function App() {
   const [uploadingFile, setUploadingFile] = useState(false);
 
   const [plagiarismReports, setPlagiarismReports] = useState([]);
-  const [showPlagiarismReports, setShowPlagiarismReports] =
-    useState(false);
+  const [showPlagiarismReports, setShowPlagiarismReports] = useState(false);
+
+  // =========================
+  // PROJECT FORM
+  // =========================
 
   const [project, setProject] = useState({
     title: "",
@@ -42,22 +59,103 @@ function App() {
     if (facultyLoggedIn || loggedIn) {
       fetchProjects();
     }
-  }, [facultyLoggedIn, loggedIn]);
+  }, [facultyLoggedIn, loggedIn, currentUserId]);
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/projects"
-      );
+      const response = await fetch(`${API_URL}/projects`);
+
+      if (!response.ok) {
+        console.error("Projects API error:", response.status);
+        return;
+      }
+
+      const data = await response.json();
+
+      setProjects(data);
+
+      // Student sees only their own projects
+      if (loggedIn && currentUserId !== null) {
+        const ownProjects = data.filter(
+          (item) =>
+            Number(item.user_id) === Number(currentUserId)
+        );
+
+        setStudentProjects(ownProjects);
+      } else {
+        setStudentProjects([]);
+      }
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+    }
+  };
+
+  // =========================
+  // LOGIN
+  // =========================
+
+  const handleLogin = async () => {
+    if (!loginType) {
+      alert("Please select Student Login or Faculty Login.");
+      return;
+    }
+
+    if (!username.trim() || !password.trim()) {
+      alert("Please enter username and password.");
+      return;
+    }
+
+    setLoggingIn(true);
+
+    try {
+      const response = await fetch(`${API_URL}/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password,
+          role: loginType,
+        }),
+      });
 
       const data = await response.json();
 
       if (response.ok) {
-        setProjects(data);
-        setStudentProjects(data);
+        setCurrentUserId(data.user_id);
+        setCurrentUsername(data.username);
+
+        if (loginType === "Student") {
+          setLoggedIn(true);
+          setFacultyLoggedIn(false);
+        }
+
+        if (loginType === "Faculty") {
+          setFacultyLoggedIn(true);
+          setLoggedIn(false);
+        }
+
+        setUsername("");
+        setPassword("");
+      } else {
+        const errorMessage =
+          typeof data.detail === "string"
+            ? data.detail
+            : "Invalid username, password, or role.";
+
+        alert(errorMessage);
       }
     } catch (error) {
-      console.error("Error fetching projects:", error);
+      console.error("LOGIN CONNECTION ERROR:", error);
+
+      alert(
+        "Frontend could not connect to FastAPI.\n\n" +
+        "Please make sure FastAPI is running at:\n" +
+        API_URL
+      );
+    } finally {
+      setLoggingIn(false);
     }
   };
 
@@ -68,7 +166,9 @@ function App() {
   const updateProjectStatus = async (projectId, status) => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/projects/${projectId}/status?status=${status}`,
+        `${API_URL}/projects/${projectId}/status?status=${encodeURIComponent(
+          status
+        )}`,
         {
           method: "PUT",
         }
@@ -81,11 +181,13 @@ function App() {
         fetchProjects();
       } else {
         alert(
-          data.message || "Failed to update project status."
+          data.detail ||
+            data.message ||
+            "Failed to update project status."
         );
       }
     } catch (error) {
-      console.error(error);
+      console.error("Status update error:", error);
       alert("Unable to connect to backend.");
     }
   };
@@ -97,7 +199,7 @@ function App() {
   const submitProject = async (projectId) => {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/projects/${projectId}/submit`,
+        `${API_URL}/projects/${projectId}/submit`,
         {
           method: "PUT",
         }
@@ -110,11 +212,13 @@ function App() {
         fetchProjects();
       } else {
         alert(
-          data.message || "Failed to submit project."
+          data.detail ||
+            data.message ||
+            "Failed to submit project."
         );
       }
     } catch (error) {
-      console.error(error);
+      console.error("Project submission error:", error);
       alert("Unable to connect to backend.");
     }
   };
@@ -131,10 +235,7 @@ function App() {
 
     const fileExtension =
       "." +
-      selectedFile.name
-        .split(".")
-        .pop()
-        .toLowerCase();
+      selectedFile.name.split(".").pop().toLowerCase();
 
     if (![".pdf", ".docx"].includes(fileExtension)) {
       alert("Only PDF and DOCX files are supported.");
@@ -149,7 +250,7 @@ function App() {
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:8000/plagiarism/upload/${projectId}`,
+        `${API_URL}/plagiarism/upload/${projectId}`,
         {
           method: "POST",
           body: formData,
@@ -167,7 +268,7 @@ function App() {
         );
       }
     } catch (error) {
-      console.error(error);
+      console.error("Plagiarism error:", error);
       alert("Unable to connect to backend.");
     } finally {
       setUploadingFile(false);
@@ -181,7 +282,7 @@ function App() {
   const fetchPlagiarismReports = async () => {
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/plagiarism/reports"
+        `${API_URL}/plagiarism/reports`
       );
 
       const data = await response.json();
@@ -190,10 +291,13 @@ function App() {
         setPlagiarismReports(data);
         setShowPlagiarismReports(true);
       } else {
-        alert("Failed to fetch plagiarism reports.");
+        alert(
+          data.detail ||
+            "Failed to fetch plagiarism reports."
+        );
       }
     } catch (error) {
-      console.error(error);
+      console.error("Report fetch error:", error);
       alert("Unable to connect to backend.");
     }
   };
@@ -212,25 +316,28 @@ function App() {
   const handleProjectSubmit = async (e) => {
     e.preventDefault();
 
+    if (currentUserId === null) {
+      alert("User session not found. Please login again.");
+      return;
+    }
+
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/projects",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: project.title,
-            domain: project.domain,
-            abstract: project.abstract,
-            team_members: project.teamMembers,
-            guide: project.guide,
-            department: project.department,
-            academic_year: project.academicYear,
-          }),
-        }
-      );
+      const response = await fetch(`${API_URL}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: project.title,
+          domain: project.domain,
+          abstract: project.abstract,
+          team_members: project.teamMembers,
+          guide: project.guide,
+          department: project.department,
+          academic_year: project.academicYear,
+          user_id: currentUserId,
+        }),
+      });
 
       const data = await response.json();
 
@@ -251,16 +358,23 @@ function App() {
 
         setShowProjectForm(false);
 
-        fetchProjects();
+        await fetchProjects();
       } else {
-        alert("Failed to create project.");
-        console.log(data);
+        alert(
+          data.detail ||
+            data.message ||
+            "Failed to create project."
+        );
+
+        console.log("Project creation error:", data);
       }
     } catch (error) {
-      console.error(error);
+      console.error("Project creation connection error:", error);
 
       alert(
-        "Unable to connect to the backend. Make sure FastAPI is running."
+        "Unable to connect to the backend.\n\n" +
+        "Make sure FastAPI is running at:\n" +
+        API_URL
       );
     }
   };
@@ -288,8 +402,8 @@ function App() {
   if (facultyLoggedIn) {
     const displayedFacultyProjects = showSubmittedOnly
       ? projects.filter(
-          (project) =>
-            project.submission_status === "Submitted"
+          (item) =>
+            item.submission_status === "Submitted"
         )
       : projects;
 
@@ -306,10 +420,6 @@ function App() {
           </div>
         </div>
 
-        {/* =========================
-            PROJECT STATISTICS
-            ========================= */}
-
         <div className="stats-grid">
 
           <div className="stat-card">
@@ -325,8 +435,8 @@ function App() {
             <div className="stat-number">
               {
                 projects.filter(
-                  (project) =>
-                    project.status === "Pending"
+                  (item) =>
+                    item.status === "Pending"
                 ).length
               }
             </div>
@@ -339,8 +449,8 @@ function App() {
             <div className="stat-number">
               {
                 projects.filter(
-                  (project) =>
-                    project.status === "Approved"
+                  (item) =>
+                    item.status === "Approved"
                 ).length
               }
             </div>
@@ -353,8 +463,8 @@ function App() {
             <div className="stat-number">
               {
                 projects.filter(
-                  (project) =>
-                    project.status === "Rejected"
+                  (item) =>
+                    item.status === "Rejected"
                 ).length
               }
             </div>
@@ -364,10 +474,6 @@ function App() {
           </div>
 
         </div>
-
-        {/* =========================
-            FACULTY ACTIONS
-            ========================= */}
 
         <div className="section-card">
 
@@ -423,10 +529,6 @@ function App() {
 
         </div>
 
-        {/* =========================
-            FACULTY PROJECT LIST
-            ========================= */}
-
         {showFacultyProjects && (
           <div className="section-card">
 
@@ -446,27 +548,27 @@ function App() {
                 </p>
               </div>
             ) : (
-              displayedFacultyProjects.map((project) => (
+              displayedFacultyProjects.map((item) => (
                 <div
-                  key={project.id}
+                  key={item.id}
                   className="project-card"
                 >
 
                   <div className="project-card-header">
                     <div>
                       <span className="project-id">
-                        PROJECT #{project.id}
+                        PROJECT #{item.id}
                       </span>
 
-                      <h3>{project.title}</h3>
+                      <h3>{item.title}</h3>
                     </div>
 
                     <span
                       className={getStatusClass(
-                        project.status
+                        item.status
                       )}
                     >
-                      {project.status || "Pending"}
+                      {item.status || "Pending"}
                     </span>
                   </div>
 
@@ -474,40 +576,40 @@ function App() {
 
                     <p>
                       <strong>Domain</strong>
-                      {project.domain}
+                      {item.domain}
                     </p>
 
                     <p>
                       <strong>Department</strong>
-                      {project.department}
+                      {item.department}
                     </p>
 
                     <p>
                       <strong>Academic Year</strong>
-                      {project.academic_year}
+                      {item.academic_year}
                     </p>
 
                     <p>
                       <strong>Guide</strong>
-                      {project.guide}
+                      {item.guide}
                     </p>
 
                     <p>
                       <strong>Team Members</strong>
-                      {project.team_members}
+                      {item.team_members}
                     </p>
 
                   </div>
 
                   <div className="abstract-box">
                     <strong>Abstract</strong>
-                    <p>{project.abstract}</p>
+                    <p>{item.abstract}</p>
                   </div>
 
                   <p>
                     <strong>Submission:</strong>{" "}
                     <span className="submission-status">
-                      {project.submission_status ||
+                      {item.submission_status ||
                         "Not Submitted"}
                     </span>
                   </p>
@@ -517,7 +619,7 @@ function App() {
                     <button
                       onClick={() =>
                         updateProjectStatus(
-                          project.id,
+                          item.id,
                           "Approved"
                         )
                       }
@@ -529,7 +631,7 @@ function App() {
                       className="danger-button"
                       onClick={() =>
                         updateProjectStatus(
-                          project.id,
+                          item.id,
                           "Rejected"
                         )
                       }
@@ -554,10 +656,6 @@ function App() {
 
           </div>
         )}
-
-        {/* =========================
-            PLAGIARISM REPORTS
-            ========================= */}
 
         {showPlagiarismReports && (
           <div className="section-card">
@@ -625,6 +723,8 @@ function App() {
           onClick={() => {
             setFacultyLoggedIn(false);
             setLoginType("");
+            setCurrentUserId(null);
+            setCurrentUsername("");
             setShowFacultyProjects(false);
             setShowSubmittedOnly(false);
             setShowPlagiarismReports(false);
@@ -656,15 +756,18 @@ function App() {
               Manage your academic projects and
               plagiarism checks.
             </p>
+
+            {currentUsername && (
+              <p className="section-description">
+                Logged in as:{" "}
+                <strong>{currentUsername}</strong>
+              </p>
+            )}
           </div>
         </div>
 
         {!showProjectForm ? (
           <>
-
-            {/* =========================
-                CREATE PROJECT
-                ========================= */}
 
             <div className="hero-card">
 
@@ -692,10 +795,6 @@ function App() {
               </button>
 
             </div>
-
-            {/* =========================
-                MY PROJECTS
-                ========================= */}
 
             <div className="section-card">
 
@@ -727,9 +826,9 @@ function App() {
               ) : (
                 <div>
 
-                  {studentProjects.map((project) => (
+                  {studentProjects.map((item) => (
                     <div
-                      key={project.id}
+                      key={item.id}
                       className="project-card"
                     >
 
@@ -738,52 +837,48 @@ function App() {
                         <div>
 
                           <span className="project-id">
-                            PROJECT #{project.id}
+                            PROJECT #{item.id}
                           </span>
 
                           <h3>
-                            {project.title}
+                            {item.title}
                           </h3>
 
                         </div>
 
                         <span
                           className={getStatusClass(
-                            project.status
+                            item.status
                           )}
                         >
-                          {project.status || "Pending"}
+                          {item.status || "Pending"}
                         </span>
 
                       </div>
 
                       <p>
                         <strong>Domain:</strong>{" "}
-                        {project.domain}
+                        {item.domain}
                       </p>
 
                       <p>
                         <strong>Submission:</strong>{" "}
                         <span className="submission-status">
-                          {project.submission_status ||
+                          {item.submission_status ||
                             "Not Submitted"}
                         </span>
                       </p>
 
-                      {project.submission_status !==
+                      {item.submission_status !==
                         "Submitted" && (
                         <button
                           onClick={() =>
-                            submitProject(project.id)
+                            submitProject(item.id)
                           }
                         >
                           Submit Project
                         </button>
                       )}
-
-                      {/* =========================
-                          PLAGIARISM CHECKER
-                          ========================= */}
 
                       <div className="plagiarism-box">
 
@@ -813,7 +908,7 @@ function App() {
                         <button
                           onClick={() =>
                             handlePlagiarismCheck(
-                              project.id
+                              item.id
                             )
                           }
                           disabled={uploadingFile}
@@ -877,10 +972,6 @@ function App() {
 
             </div>
 
-            {/* =========================
-                PROJECT STATUS
-                ========================= */}
-
             <div className="stats-grid">
 
               <div className="stat-card">
@@ -896,8 +987,8 @@ function App() {
                 <div className="stat-number">
                   {
                     studentProjects.filter(
-                      (project) =>
-                        project.status === "Pending"
+                      (item) =>
+                        item.status === "Pending"
                     ).length
                   }
                 </div>
@@ -910,8 +1001,8 @@ function App() {
                 <div className="stat-number">
                   {
                     studentProjects.filter(
-                      (project) =>
-                        project.status === "Approved"
+                      (item) =>
+                        item.status === "Approved"
                     ).length
                   }
                 </div>
@@ -927,9 +1018,12 @@ function App() {
               onClick={() => {
                 setLoggedIn(false);
                 setLoginType("");
+                setCurrentUserId(null);
+                setCurrentUsername("");
                 setSelectedFile(null);
                 setPlagiarismResult(null);
                 setShowProjectForm(false);
+                setStudentProjects([]);
               }}
             >
               Logout
@@ -937,10 +1031,6 @@ function App() {
 
           </>
         ) : (
-
-          /* =========================
-             CREATE PROJECT FORM
-             ========================= */
 
           <div className="section-card">
 
@@ -1114,14 +1204,22 @@ function App() {
         <div className="login-options">
 
           <button
-            onClick={() => setLoginType("Student")}
+            onClick={() => {
+              setLoginType("Student");
+              setUsername("");
+              setPassword("");
+            }}
           >
             Student Login
           </button>
 
           <button
             className="secondary-button"
-            onClick={() => setLoginType("Faculty")}
+            onClick={() => {
+              setLoginType("Faculty");
+              setUsername("");
+              setPassword("");
+            }}
           >
             Faculty Login
           </button>
@@ -1134,27 +1232,28 @@ function App() {
             <h2>{loginType} Login</h2>
 
             <input
-              type="email"
-              placeholder="Enter your email"
+              type="text"
+              placeholder="Enter username"
+              value={username}
+              onChange={(e) =>
+                setUsername(e.target.value)
+              }
             />
 
             <input
               type="password"
               placeholder="Enter your password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
             />
 
             <button
-              onClick={() => {
-                if (loginType === "Student") {
-                  setLoggedIn(true);
-                }
-
-                if (loginType === "Faculty") {
-                  setFacultyLoggedIn(true);
-                }
-              }}
+              onClick={handleLogin}
+              disabled={loggingIn}
             >
-              Login
+              {loggingIn ? "Logging in..." : "Login"}
             </button>
 
           </div>

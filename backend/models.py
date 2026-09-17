@@ -2,6 +2,15 @@ from sqlalchemy import Column, Integer, String, Text, Float
 from database import Base
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(100), unique=True, nullable=False)
+    password = Column(String(255), nullable=False)
+    role = Column(String(20), nullable=False)
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -13,6 +22,7 @@ class Project(Base):
     guide = Column(String(255))
     department = Column(String(100), nullable=False)
     academic_year = Column(String(20), nullable=False)
+    user_id = Column(Integer, nullable=True)
 
     # Project review status
     status = Column(String(20), default="Pending")
@@ -22,6 +32,7 @@ class Project(Base):
         String(20),
         default="Not Submitted"
     )
+
 
 class PlagiarismReport(Base):
     __tablename__ = "plagiarism_reports"
